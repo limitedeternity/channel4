@@ -1,82 +1,88 @@
-'use strict';
+const nowait = queueMicrotask || setImmediate || (function () {
+    if (typeof Promise !== "undefined") {
+        return function(fn) {
+            Promise.resolve().then(fn);
+        }
+    }
 
-module.exports = Channel;
+    return function(fn) {
+        setTimeout(fn, 0);
+    }
+})();
 
-function Channel() {
-  return {
-    buffer: [],
-    consumers: [],
-    closed: false
-  };
+class Channel {
+    static END = Symbol('END');
+    static KEEP_OPEN = Symbol('KEEP_OPEN');
+    static CLOSE_BOTH = Symbol('CLOSE_BOTH');
+
+    constructor() {
+        this.buffer = [];
+        this.consumers = [];
+        this.closed = false;
+    }
+
+    #runTick() {
+        if (this.buffer.length === 0 || this.consumers.length === 0) return this;
+
+        const message = this.buffer.shift();
+        const consumer = this.consumers.shift();
+
+        nowait(() => consumer(message));
+        return this.#runTick();
+    };
+    
+    put(value) {
+        if (this.closed) return this;
+        if (value === Channel.END) this.closed = true;
+
+        this.buffer.push(value);
+        return this.#runTick();
+    }
+
+    take(callback) {
+        if (this.closed && this.buffer.length === 0) return this;
+        if (!!(callback && callback.constructor && callback.call && callback.apply)) this.consumers.push(callback);
+        return this.#runTick();
+    }
+
+    pipe(output, { keepOpen = Channel.KEEP_OPEN, transform = (x => x) } = {}) {
+        function consume(value) {
+            if (keepOpen !== Channel.KEEP_OPEN || value !== Channel.END) output.put(transform(value));
+            if (value !== Channel.END) this.take(consume);
+        }
+
+        this.take(consume.bind(this));
+        return output;
+    }
+    
+    demux(channels, { keepOpen = Channel.KEEP_OPEN, transform = (x => x)} = {}) {
+        function pipeThere(channel) {
+            return channel.pipe(this, { keepOpen, transform });
+        }
+
+        channels.forEach(pipeThere.bind(this));
+        return this;
+    }
+    
+    mux(channels, { keepOpen = Channel.KEEP_OPEN, transform = (x => x)} = {}) {
+        function consume(value) {
+            if (keepOpen !== Channel.KEEP_OPEN || value !== Channel.END) 
+                channels.forEach(channel => channel.put(transform(value)));
+            if (value !== Channel.END) this.take(consume);
+        }
+        
+        this.take(consume.bind(this));
+        return channels;
+    }
+
+    close() {
+        return this.put(Channel.END);
+    }
 }
 
-const END = Channel.END = Symbol('END');
-const KEEP_OPEN = Channel.KEEP_OPEN = Symbol('KEEP_OPEN');
-const CLOSE_BOTH = Channel.CLOSE_BOTH = Symbol('CLOSE_BOTH');
+if (typeof module !== "undefined") {
+    module.exports = Channel;
 
-Channel.put = (channel, value) => {
-  if (channel.closed) return channel;
-
-  if (value === END) channel.closed = true;
-
-  channel.buffer.push(value);
-  return runTick(channel);
-};
-
-Channel.take = (channel, callback) => {
-  if (channel.closed && channel.buffer.length === 0) return channel;
-
-  if (isFunction(callback)) channel.consumers.push(callback);
-
-  return runTick(channel);
-};
-
-Channel.close = (channel) => {
-  return Channel.put(channel, END);
-};
-
-Channel.pipe = (input, output, keepOpen = KEEP_OPEN, transform = identity) => {
-  const consume = (value) => {
-    if (!(keepOpen === KEEP_OPEN && value === END))
-      Channel.put(output, transform(value));
-
-    if (value !== END) Channel.take(input, consume);
-  };
-
-  Channel.take(input, consume);
-  return output;
-};
-
-Channel.demux = (channels, output, keepOpen, transform) => {
-  channels.forEach((channel) => Channel.pipe(channel, output, keepOpen, transform));
-  return output;
-};
-
-Channel.mux = (input, channels, keepOpen, transform = identity) => {
-  const consume = (value) => {
-    if (!(keepOpen === KEEP_OPEN && value === END))
-      channels.forEach((channel) => Channel.put(channel, transform(value)));
-
-    if (value !== END) Channel.take(input, consume);
-  };
-
-  Channel.take(input, consume);
-  return channels;
-};
-
-const runTick = (channel) => {
-  if (!(channel.buffer.length !== 0 && channel.consumers.length !== 0)) {
-    return channel;
-  }
-
-  const message = channel.buffer.shift();
-  const consumer = channel.consumers.shift();
-
-  setImmediate(consumer.bind(null, message));
-
-  return runTick(channel);
-};
-
-const identity = (value) => value;
-
-const isFunction = (fn) => ({}).toString.call(fn) === '[object Function]';
+} else {
+    window.Channel = Channel;
+}
