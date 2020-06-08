@@ -1,4 +1,4 @@
-const nowait = queueMicrotask || setImmediate || (function () {
+const nowait = typeof queueMicrotask !== "undefined" ? queueMicrotask : typeof setImmediate !== "undefined" ? setImmediate : (function() {
     if (typeof Promise !== "undefined") {
         return function(fn) {
             Promise.resolve().then(fn);
@@ -8,7 +8,7 @@ const nowait = queueMicrotask || setImmediate || (function () {
     return function(fn) {
         setTimeout(fn, 0);
     }
-})();
+}());
 
 class Channel {
     static END = Symbol('END');
@@ -80,9 +80,15 @@ class Channel {
     }
 }
 
-if (typeof module !== "undefined") {
-    module.exports = Channel;
-
-} else {
-    window.Channel = Channel;
-}
+(function(root) {
+    if (typeof define === "function" && define.amd) {
+        define([], () => Channel);
+    } else if (typeof exports !== "undefined") {
+        if (typeof module !== "undefined" && module.exports) {
+            exports = module.exports = Channel;
+        }
+        exports.Channel = Channel;
+    } else {
+        root.Channel = Channel;
+    }
+}(typeof module !== "undefined" ? module : typeof window !== "undefined" ? window : {}));

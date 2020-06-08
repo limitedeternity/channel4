@@ -8,6 +8,8 @@ npm install @limitedeternity/channel4
 ## Usage
 
 ```js
+// if Node: const Channel = require("@limitedeternity/channel4");
+
 let channel = new Channel();
 channel.take(value => {
   console.log(`Hello ${value}`);
@@ -68,7 +70,7 @@ Also, multiple producers can put values for multiple consumers to take.
 
 ```js
 let channel = new Channel();
-document.querySelectorAll('button')
+document.querySelector('button')
   .addEventListener('click', () => channel.put('onclick'));
 
 channel.take(value => if (value === 'onclick') ...);
@@ -79,16 +81,18 @@ listening to click events.
 
 ```js
 let channel = new Channel();
-document.querySelectorAll('a')
+document.querySelector('a')
   .addEventListener('click', () => channel.put('a.onclick'));
-document.querySelectorAll('button')
+document.querySelector('button')
   .addEventListener('click', () => channel.put('button.onclick'));
 
 channel.take(value => if (value === 'a.onclick') ...);
 ```
 
-In this other example, the consumer isn't aware that multiple producers are
+In this example, the consumer isn't aware that multiple producers are
 placing items of work on the queue.
+
+Also, here is an [example of infinite event handling](https://gist.github.com/limitedeternity/fd22e79e0c6be08f07ce2619f6bfe781).
 
 ## API
 
